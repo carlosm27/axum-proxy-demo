@@ -13,11 +13,15 @@ use tower::{make::Shared, ServiceExt};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
+mod helpers;
+use helpers::{check_address_block, read_file_lines_to_vec};
 
 
 
 #[tokio::main]
 async fn main() {
+    let file_path = "./blacklist.txt";
+    println!("{:?}", read_file_lines_to_vec(&file_path.to_string()));
     tracing_subscriber::registry()
     .with(tracing_subscriber::fmt::layer())
     .init();
@@ -58,9 +62,12 @@ axum::Server::bind(&addr)
 
 async fn proxy(req: Request<Body>) -> Result<Response, hyper::Error> {
     tracing::trace!(?req);
-
-    if let Some(host_addr) = req.uri().authority().map(|auth| auth.to_string()) {
-        tokio::task::spawn(async move {
+   
+    if let Some(host_addr) = req.uri().authority().map(|auth|                     auth.to_string()) {
+       if check_address_block(&host_addr) == true {
+           println!("This site is blocked")
+       } else {
+            tokio::task::spawn(async move {
             match hyper::upgrade::on(req).await {
                 Ok(upgraded) => {
                     if let Err(e) = tunnel(upgraded, host_addr).await {
@@ -68,8 +75,9 @@ async fn proxy(req: Request<Body>) -> Result<Response, hyper::Error> {
                     };
                 }
                 Err(e) => tracing::warn!("upgrade error: {}", e),
-            }
-        });
+                }
+            });
+       }   
 
         Ok(Response::new(body::boxed(body::Empty::new())))
     } else {
@@ -96,3 +104,12 @@ async fn tunnel(mut upgraded: Upgraded, addr: String) -> std::io::Result<()> {
 
     Ok(())
 }
+
+async fn blocker(addr: String) -> Response {
+    if check_address_block(addr.as_str()) {
+        StatusCode::FORBIDDEN.into_response()
+    } else {
+        StatusCode::CONTINUE.into_response()
+    }
+}
+
