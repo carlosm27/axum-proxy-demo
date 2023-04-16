@@ -1,2 +1,3 @@
-https://instagram.com
-https://twitter.com
+facebook.com:443
+twitter.com:443
+www.instagram.com
